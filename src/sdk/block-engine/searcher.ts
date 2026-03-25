@@ -31,21 +31,22 @@ export class SearcherClientError extends Error {
 
 export class SearcherClient {
   private client: SearcherServiceClient;
-  private readonly retryOptions: Readonly<{
-    maxRetries: number;
-    baseDelay: number;
-    maxDelay: number;
-    factor: number;
-  }>;
+  private authProvider?: AuthProvider;
 
-  constructor(client: SearcherServiceClient) {
+  constructor(client: SearcherServiceClient, authProvider?: AuthProvider) {
     this.client = client;
-    this.retryOptions = Object.freeze({
-      maxRetries: 3,
-      baseDelay: 1000,
-      maxDelay: 10000,
-      factor: 2,
-    });
+    if (authProvider) {
+      this.authProvider = authProvider;
+    }
+  }
+
+  // init
+  public async init(): Promise<void> {
+    if (this.authProvider) {
+      console.log('Initializing auth provider');
+      await this.authProvider.init();
+      console.log('Auth provider initialized');
+    }
   }
 
   private handleError(e: ServiceError): SearcherClientError {
@@ -421,7 +422,7 @@ export const searcherClient = (
       ChannelCredentials.createSsl(),
       {interceptors: [authInterceptor(authProvider)], ...grpcOptions}
     );
-    return new SearcherClient(client);
+    return new SearcherClient(client, authProvider);
   } else {
     const client = new SearcherServiceClient(
       url,
