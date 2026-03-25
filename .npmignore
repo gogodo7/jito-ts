@@ -3,6 +3,7 @@
 *.tgz
 
 #tests
+tests
 test
 coverage
 

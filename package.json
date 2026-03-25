@@ -1,7 +1,7 @@
 {
   "author": "NULL",
   "license": "Apache-2.0",
-  "name": "jito-ts",
+  "name": "@sevenze/jito-ts",
   "version": "4.2.1",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
