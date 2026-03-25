@@ -50,43 +50,99 @@ export class SearcherClient {
 
   private handleError(e: ServiceError): SearcherClientError {
     const errorDetails = e.details || 'No additional details provided';
-    
+
     switch (e.code) {
       case status.OK:
-        return new SearcherClientError(e.code, 'Unexpected OK status in error', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Unexpected OK status in error',
+          errorDetails
+        );
       case status.CANCELLED:
-        return new SearcherClientError(e.code, 'The operation was cancelled', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'The operation was cancelled',
+          errorDetails
+        );
       case status.UNKNOWN:
         return new SearcherClientError(e.code, 'Unknown error', errorDetails);
       case status.INVALID_ARGUMENT:
-        return new SearcherClientError(e.code, 'Invalid argument provided', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Invalid argument provided',
+          errorDetails
+        );
       case status.DEADLINE_EXCEEDED:
-        return new SearcherClientError(e.code, 'Deadline exceeded', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Deadline exceeded',
+          errorDetails
+        );
       case status.NOT_FOUND:
-        return new SearcherClientError(e.code, 'Requested entity not found', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Requested entity not found',
+          errorDetails
+        );
       case status.ALREADY_EXISTS:
-        return new SearcherClientError(e.code, 'The entity already exists', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'The entity already exists',
+          errorDetails
+        );
       case status.PERMISSION_DENIED:
-        return new SearcherClientError(e.code, 'Lacking required permission', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Lacking required permission',
+          errorDetails
+        );
       case status.RESOURCE_EXHAUSTED:
-        return new SearcherClientError(e.code, 'Resource has been exhausted', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Resource has been exhausted',
+          errorDetails
+        );
       case status.FAILED_PRECONDITION:
-        return new SearcherClientError(e.code, 'Operation rejected, system not in correct state', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Operation rejected, system not in correct state',
+          errorDetails
+        );
       case status.ABORTED:
-        return new SearcherClientError(e.code, 'The operation was aborted', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'The operation was aborted',
+          errorDetails
+        );
       case status.OUT_OF_RANGE:
-        return new SearcherClientError(e.code, 'Operation attempted past the valid range', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Operation attempted past the valid range',
+          errorDetails
+        );
       case status.UNIMPLEMENTED:
-        return new SearcherClientError(e.code, 'Operation not implemented or supported', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Operation not implemented or supported',
+          errorDetails
+        );
       case status.INTERNAL:
         return new SearcherClientError(e.code, 'Internal error', errorDetails);
       case status.UNAVAILABLE:
         let unavailableMessage = 'The service is currently unavailable';
-        if (errorDetails.includes('upstream connect error or disconnect/reset before headers')) {
+        if (
+          errorDetails.includes(
+            'upstream connect error or disconnect/reset before headers'
+          )
+        ) {
           unavailableMessage = 'Service unavailable: Envoy overloaded';
-        } else if (errorDetails.toLowerCase().includes('dns resolution failed')) {
+        } else if (
+          errorDetails.toLowerCase().includes('dns resolution failed')
+        ) {
           unavailableMessage = 'Service unavailable: DNS resolution failed';
-        } else if (errorDetails.toLowerCase().includes('ssl handshake failed')) {
+        } else if (
+          errorDetails.toLowerCase().includes('ssl handshake failed')
+        ) {
           unavailableMessage = 'Service unavailable: SSL handshake failed';
         } else if (errorDetails.toLowerCase().includes('connection refused')) {
           unavailableMessage = 'Service unavailable: Connection refused';
@@ -95,13 +151,29 @@ export class SearcherClient {
         } else if (errorDetails.toLowerCase().includes('timeout')) {
           unavailableMessage = 'Service unavailable: Connection timed out';
         }
-        return new SearcherClientError(e.code, unavailableMessage, errorDetails);
+        return new SearcherClientError(
+          e.code,
+          unavailableMessage,
+          errorDetails
+        );
       case status.DATA_LOSS:
-        return new SearcherClientError(e.code, 'Unrecoverable data loss or corruption', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Unrecoverable data loss or corruption',
+          errorDetails
+        );
       case status.UNAUTHENTICATED:
-        return new SearcherClientError(e.code, 'Request not authenticated', errorDetails);
+        return new SearcherClientError(
+          e.code,
+          'Request not authenticated',
+          errorDetails
+        );
       default:
-        return new SearcherClientError(status.UNKNOWN, `Unexpected error: ${e.message}`, errorDetails);
+        return new SearcherClientError(
+          status.UNKNOWN,
+          `Unexpected error: ${e.message}`,
+          errorDetails
+        );
     }
   }
 
@@ -112,15 +184,23 @@ export class SearcherClient {
     try {
       return await operation();
     } catch (error) {
-      if (retries >= this.retryOptions.maxRetries || !this.isRetryableError(error)) {
+      if (
+        retries >= this.retryOptions.maxRetries ||
+        !this.isRetryableError(error)
+      ) {
         return Err(error as SearcherClientError);
       }
 
       const delay = Math.min(
-        this.retryOptions.baseDelay * Math.pow(this.retryOptions.factor, retries),
+        this.retryOptions.baseDelay *
+          Math.pow(this.retryOptions.factor, retries),
         this.retryOptions.maxDelay
       );
-      console.warn(`Operation failed. Retrying in ${delay}ms... (Attempt ${retries + 1} of ${this.retryOptions.maxRetries})`);
+      console.warn(
+        `Operation failed. Retrying in ${delay}ms... (Attempt ${
+          retries + 1
+        } of ${this.retryOptions.maxRetries})`
+      );
       await new Promise(resolve => setTimeout(resolve, delay));
 
       return this.retryWithBackoff(operation, retries + 1);
@@ -132,7 +212,7 @@ export class SearcherClient {
       if (error.code === status.UNAVAILABLE) {
         const nonRetryableMessages = [
           'Service unavailable: DNS resolution failed',
-          'Service unavailable: SSL handshake failed'
+          'Service unavailable: SSL handshake failed',
         ];
         return !nonRetryableMessages.some(msg => error.message.includes(msg));
       }
@@ -146,18 +226,20 @@ export class SearcherClient {
     return false;
   }
 
-   /**
+  /**
    * Submits a bundle to the block-engine.
    *
    * @param bundle - The Bundle object to be sent.
    * @returns A Promise that resolves to the bundle's UUID (string) on successful submission.
    * @throws A ServiceError if there's an issue with the server while sending the bundle.
    */
-   async sendBundle(bundle: Bundle): Promise<Result<string, SearcherClientError>> {
+  async sendBundle(
+    bundle: Bundle
+  ): Promise<Result<string, SearcherClientError>> {
     return this.retryWithBackoff(() => {
-      return new Promise<Result<string, SearcherClientError>>((resolve) => {
+      return new Promise<Result<string, SearcherClientError>>(resolve => {
         this.client.sendBundle(
-          { bundle } as SendBundleRequest,
+          {bundle} as SendBundleRequest,
           (e: ServiceError | null, resp: SendBundleResponse) => {
             if (e) {
               resolve(Err(this.handleError(e)));
@@ -178,7 +260,7 @@ export class SearcherClient {
    */
   async getTipAccounts(): Promise<Result<string[], SearcherClientError>> {
     return this.retryWithBackoff(() => {
-      return new Promise<Result<string[], SearcherClientError>>((resolve) => {
+      return new Promise<Result<string[], SearcherClientError>>(resolve => {
         this.client.getTipAccounts(
           {},
           (e: ServiceError | null, resp: GetTipAccountsResponse) => {
@@ -193,15 +275,19 @@ export class SearcherClient {
     });
   }
 
-   /**
+  /**
    * Retrieves connected leaders (validators) from the server.
    *
    * @returns A Promise that resolves to a map, where keys are validator identity keys (usually public keys), and values are SlotList objects.
    * @throws A ServiceError if there's an issue with the server while fetching connected leaders.
    */
-  async getConnectedLeaders(): Promise<Result<{[key: string]: SlotList}, SearcherClientError>> {
+  async getConnectedLeaders(): Promise<
+    Result<{[key: string]: SlotList}, SearcherClientError>
+  > {
     return this.retryWithBackoff(() => {
-      return new Promise<Result<{[key: string]: SlotList}, SearcherClientError>>((resolve) => {
+      return new Promise<
+        Result<{[key: string]: SlotList}, SearcherClientError>
+      >(resolve => {
         this.client.getConnectedLeaders(
           {},
           async (e: ServiceError | null, resp: ConnectedLeadersResponse) => {
@@ -225,17 +311,27 @@ export class SearcherClient {
    *        - nextLeaderIdentity: The identity of the next scheduled leader
    * @throws A ServiceError if there's an issue with the server while fetching the next scheduled leader.
    */
-  async getNextScheduledLeader(): Promise<Result<{
-    currentSlot: number;
-    nextLeaderSlot: number;
-    nextLeaderIdentity: string;
-  }, SearcherClientError>> {
-    return this.retryWithBackoff(() => {
-      return new Promise<Result<{
+  async getNextScheduledLeader(): Promise<
+    Result<
+      {
         currentSlot: number;
         nextLeaderSlot: number;
         nextLeaderIdentity: string;
-      }, SearcherClientError>>((resolve) => {
+      },
+      SearcherClientError
+    >
+  > {
+    return this.retryWithBackoff(() => {
+      return new Promise<
+        Result<
+          {
+            currentSlot: number;
+            nextLeaderSlot: number;
+            nextLeaderIdentity: string;
+          },
+          SearcherClientError
+        >
+      >(resolve => {
         this.client.getNextScheduledLeader(
           {
             regions: [],
@@ -252,24 +348,26 @@ export class SearcherClient {
     });
   }
 
-/**
+  /**
    * Checks if a gRPC error represents normal stream closure
    */
   private isNormalStreamClosure(error: any): boolean {
     const message = error.message || '';
     const code = error.code;
-    
+
     // gRPC status code 13 = INTERNAL, often used for RST_STREAM
-    if (code === 13 && (
-      message.includes('RST_STREAM') ||
-      message.includes('Call ended without gRPC status')
-    )) {
+    if (
+      code === 13 &&
+      (message.includes('RST_STREAM') ||
+        message.includes('Call ended without gRPC status'))
+    ) {
       return true;
     }
-    
+
     // Other normal closure patterns
-    return message.includes('stream ended') || 
-           message.includes('connection closed');
+    return (
+      message.includes('stream ended') || message.includes('connection closed')
+    );
   }
 
   /**
@@ -292,7 +390,7 @@ export class SearcherClient {
         successCallback(msg);
       }
     });
-    
+
     stream.on('error', e => {
       // Filter out normal stream closure events
       if (this.isNormalStreamClosure(e)) {
@@ -300,7 +398,7 @@ export class SearcherClient {
         console.debug('Bundle result stream closed normally');
         return;
       }
-      
+
       // Only call error callback for actual problems
       errorCallback(new Error(`Stream error: ${e.message}`));
     });
@@ -313,7 +411,7 @@ export class SearcherClient {
     return () => stream.cancel();
   }
 
-   /**
+  /**
    * Yields on bundle results.
    *
    * @param onError - A callback function that receives the stream error (Error)

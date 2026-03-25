@@ -25,12 +25,12 @@ import {
 import {unixTimestampFromDate} from './utils';
 
 // Result type for token refresh operations
-type RefreshResult = 
-  | { success: true }
-  | { success: false; reason: 'rate_limited'; retryAfter?: number }
-  | { success: false; reason: 'auth_failed'; error: string }
-  | { success: false; reason: 'invalid_response'; error: string }
-  | { success: false; reason: 'network_error'; error: string };
+type RefreshResult =
+  | {success: true}
+  | {success: false; reason: 'rate_limited'; retryAfter?: number}
+  | {success: false; reason: 'auth_failed'; error: string}
+  | {success: false; reason: 'invalid_response'; error: string}
+  | {success: false; reason: 'network_error'; error: string};
 
 // Export simplified error type for SDK users
 export type AuthRefreshError = {
@@ -117,35 +117,46 @@ export class AuthProvider {
       });
     }
 
-    this.refreshing.then((result) => {
-      if (result?.success) {
-        // Successful refresh - we have a valid access token
-        callback(this.accessToken!);
-      } else if (result && errorCallback) {
-        // Refresh failed - let user decide what to do
-        const authError: AuthRefreshError = {
-          reason: result.reason,
-          message: this.getErrorMessage(result),
-          ...(result.reason === 'rate_limited' && result.retryAfter !== undefined && { retryAfter: result.retryAfter })
-        };
-        errorCallback(authError);
-      } else if (result) {
-        console.error(`Token refresh failed: ${result.reason} - ${this.getErrorMessage(result)}`);
-      }
-    }).catch((error) => {
-      // This should never happen since refreshAccessToken never rejects now
-      console.error('Unexpected error in token refresh flow:', error);
-      if (errorCallback) {
-        errorCallback({
-          reason: 'network_error',
-          message: 'Unexpected error in token refresh flow'
-        });
-      }
-    });
+    this.refreshing
+      .then(result => {
+        if (result?.success) {
+          // Successful refresh - we have a valid access token
+          callback(this.accessToken!);
+        } else if (result && errorCallback) {
+          // Refresh failed - let user decide what to do
+          const authError: AuthRefreshError = {
+            reason: result.reason,
+            message: this.getErrorMessage(result),
+            ...(result.reason === 'rate_limited' &&
+              result.retryAfter !== undefined && {
+                retryAfter: result.retryAfter,
+              }),
+          };
+          errorCallback(authError);
+        } else if (result) {
+          console.error(
+            `Token refresh failed: ${result.reason} - ${this.getErrorMessage(
+              result
+            )}`
+          );
+        }
+      })
+      .catch(error => {
+        // This should never happen since refreshAccessToken never rejects now
+        console.error('Unexpected error in token refresh flow:', error);
+        if (errorCallback) {
+          errorCallback({
+            reason: 'network_error',
+            message: 'Unexpected error in token refresh flow',
+          });
+        }
+      });
   }
 
   // Helper method to safely get error message from RefreshResult
-  private getErrorMessage(result: Exclude<RefreshResult, { success: true }>): string {
+  private getErrorMessage(
+    result: Exclude<RefreshResult, {success: true}>
+  ): string {
     switch (result.reason) {
       case 'rate_limited':
         return 'Request rate limited';
@@ -160,7 +171,7 @@ export class AuthProvider {
 
   // Refresh access token with proper error reporting
   private async refreshAccessToken(): Promise<RefreshResult> {
-    return new Promise<RefreshResult>((resolve) => {
+    return new Promise<RefreshResult>(resolve => {
       this.client.refreshAccessToken(
         {
           refreshToken: this.refreshToken?.token,
@@ -168,56 +179,59 @@ export class AuthProvider {
         async (e: ServiceError | null, resp: RefreshAccessTokenResponse) => {
           if (e) {
             // Handle different types of errors with specific reasons
-            if (e.code === 8) { // RESOURCE_EXHAUSTED (gRPC equivalent of 429)
-              resolve({ 
-                success: false, 
-                reason: 'rate_limited'
-              });
-              return;
-            }
-            
-            if (e.code === 16) { // UNAUTHENTICATED
-              resolve({ 
-                success: false, 
-                reason: 'auth_failed', 
-                error: e.message 
+            if (e.code === 8) {
+              // RESOURCE_EXHAUSTED (gRPC equivalent of 429)
+              resolve({
+                success: false,
+                reason: 'rate_limited',
               });
               return;
             }
 
-            if (e.code === 14) { // UNAVAILABLE
-              resolve({ 
-                success: false, 
-                reason: 'network_error', 
-                error: e.message 
+            if (e.code === 16) {
+              // UNAUTHENTICATED
+              resolve({
+                success: false,
+                reason: 'auth_failed',
+                error: e.message,
+              });
+              return;
+            }
+
+            if (e.code === 14) {
+              // UNAVAILABLE
+              resolve({
+                success: false,
+                reason: 'network_error',
+                error: e.message,
               });
               return;
             }
 
             // Default to auth failure for other error codes
-            resolve({ 
-              success: false, 
-              reason: 'auth_failed', 
-              error: e.message 
+            resolve({
+              success: false,
+              reason: 'auth_failed',
+              error: e.message,
             });
             return;
           }
-  
+
           if (!AuthProvider.isValidToken(resp.accessToken)) {
-            resolve({ 
-              success: false, 
-              reason: 'invalid_response', 
-              error: 'Received invalid access token from server' 
+            resolve({
+              success: false,
+              reason: 'invalid_response',
+              error: 'Received invalid access token from server',
             });
             return;
           }
-          
+
           this.accessToken = new Jwt(
             resp.accessToken?.value || '',
             unixTimestampFromDate(resp.accessToken?.expiresAtUtc || new Date())
           );
-          
-          resolve({ success: true });
+
+          resolve({success: true});
         }
       );
     });
