@@ -8,7 +8,10 @@ import {
 } from '@solana/web3.js';
 import bs58 from 'bs58';
 
-import {SearcherClient, SearcherClientError} from '../../sdk/block-engine/searcher';
+import {
+  SearcherClient,
+  SearcherClientError,
+} from '../../sdk/block-engine/searcher';
 import {Bundle} from '../../sdk/block-engine/types';
 import {isError, Result} from '../../sdk/block-engine/utils';
 
@@ -38,7 +41,8 @@ export const sendBundles = async (
       if (!next_leader.ok) {
         return next_leader;
       }
-      const num_slots = next_leader.value.nextLeaderSlot - next_leader.value.currentSlot;
+      const num_slots =
+        next_leader.value.nextLeaderSlot - next_leader.value.currentSlot;
       isLeaderSlot = num_slots <= 2;
       console.log(`next jito leader slot in ${num_slots} slots`);
       await new Promise(r => setTimeout(r, 500));
@@ -56,13 +60,13 @@ export const sendBundles = async (
       buildMemoTransaction(keypair, 'jito test 2', blockHash.blockhash)
     );
     if (isError(maybeBundle)) {
-      return { 
-        ok: false, 
+      return {
+        ok: false,
         error: new SearcherClientError(
           3, // INVALID_ARGUMENT
           'Failed to add transactions to bundle',
           maybeBundle.message
-        )
+        ),
       };
     }
 
@@ -74,13 +78,13 @@ export const sendBundles = async (
     );
 
     if (isError(maybeBundle)) {
-      return { 
-        ok: false, 
+      return {
+        ok: false,
         error: new SearcherClientError(
           3, // INVALID_ARGUMENT
           'Failed to add tip transaction to bundle',
           maybeBundle.message
-        )
+        ),
       };
     }
 
@@ -96,9 +100,9 @@ export const sendBundles = async (
           return resp;
         } catch (e) {
           console.error('error sending bundle:', e);
-          return { 
-            ok: false, 
-            error: e as SearcherClientError 
+          return {
+            ok: false,
+            error: e as SearcherClientError,
           };
         }
       })
@@ -107,17 +111,18 @@ export const sendBundles = async (
     // Check if any bundle sends failed
     const error = results.find(r => !r.ok);
     if (error && !error.ok) {
-      return { ok: false, error: error.error };
+      return {ok: false, error: error.error};
     }
 
     // At this point we know all results are successful
-    const successResults = results.filter((r): r is { ok: true; value: string } => r.ok);
-    return { ok: true, value: successResults.map(r => r.value) };
-
+    const successResults = results.filter(
+      (r): r is {ok: true; value: string} => r.ok
+    );
+    return {ok: true, value: successResults.map(r => r.value)};
   } catch (e) {
-    return { 
-      ok: false, 
-      error: e as SearcherClientError 
+    return {
+      ok: false,
+      error: e as SearcherClientError,
     };
   }
 };

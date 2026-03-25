@@ -39,28 +39,34 @@ const main = async () => {
   console.log('Successfully sent bundles:', result.value);
 
   // Simple poll for results with timeout
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let finalResult: any = null; // Temporarily use any to avoid TS issues
   const timeout = 30000; // 30 seconds
-  const pollInterval = 2000; // 2 seconds  
+  const pollInterval = 2000; // 2 seconds
   const startTime = Date.now();
-  
+
   console.log('Polling for bundle results...');
-  
+
   const cancelStream = c.onBundleResult(
-    (bundleResult) => {
+    bundleResult => {
       console.log('received bundle result:', bundleResult);
       // Simplify the conditional - just assign if any final state exists
-      if (bundleResult.rejected || bundleResult.finalized || bundleResult.processed || bundleResult.dropped) {
+      if (
+        bundleResult.rejected ||
+        bundleResult.finalized ||
+        bundleResult.processed ||
+        bundleResult.dropped
+      ) {
         finalResult = bundleResult as BundleResult;
       }
     },
-    (error) => {
+    error => {
       console.log('Stream error (ignoring):', error.message);
     }
   );
 
   // Poll until we get a final result or timeout
-  while (!finalResult && (Date.now() - startTime) < timeout) {
+  while (!finalResult && Date.now() - startTime < timeout) {
     await new Promise(resolve => setTimeout(resolve, pollInterval));
   }
 
@@ -73,7 +79,7 @@ const main = async () => {
     else if (finalResult.finalized) state = 'FINALIZED';
     else if (finalResult.processed) state = 'PROCESSED';
     else if (finalResult.dropped) state = 'DROPPED';
-    
+
     console.log(`Bundle reached final state: ${state}`);
   } else {
     console.log('Bundle result timeout - assuming processed');
@@ -85,9 +91,11 @@ const main = async () => {
 main()
   .then(() => {
     console.log('Exiting gracefully');
+    // eslint-disable-next-line no-process-exit
     process.exit(0);
   })
   .catch(e => {
     console.error('Error:', e);
+    // eslint-disable-next-line no-process-exit
     process.exit(1);
   });
