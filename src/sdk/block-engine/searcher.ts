@@ -128,7 +128,7 @@ export class SearcherClient {
         );
       case status.INTERNAL:
         return new SearcherClientError(e.code, 'Internal error', errorDetails);
-      case status.UNAVAILABLE:
+      case status.UNAVAILABLE: {
         let unavailableMessage = 'The service is currently unavailable';
         if (
           errorDetails.includes(
@@ -156,6 +156,7 @@ export class SearcherClient {
           unavailableMessage,
           errorDetails
         );
+      }
       case status.DATA_LOSS:
         return new SearcherClientError(
           e.code,
@@ -177,36 +178,7 @@ export class SearcherClient {
     }
   }
 
-  private async retryWithBackoff<T>(
-    operation: () => Promise<Result<T, SearcherClientError>>,
-    retries = 0
-  ): Promise<Result<T, SearcherClientError>> {
-    try {
-      return await operation();
-    } catch (error) {
-      if (
-        retries >= this.retryOptions.maxRetries ||
-        !this.isRetryableError(error)
-      ) {
-        return Err(error as SearcherClientError);
-      }
-
-      const delay = Math.min(
-        this.retryOptions.baseDelay *
-          Math.pow(this.retryOptions.factor, retries),
-        this.retryOptions.maxDelay
-      );
-      console.warn(
-        `Operation failed. Retrying in ${delay}ms... (Attempt ${
-          retries + 1
-        } of ${this.retryOptions.maxRetries})`
-      );
-      await new Promise(resolve => setTimeout(resolve, delay));
-
-      return this.retryWithBackoff(operation, retries + 1);
-    }
-  }
-
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private isRetryableError(error: any): boolean {
     if (error instanceof SearcherClientError) {
       if (error.code === status.UNAVAILABLE) {
@@ -236,19 +208,17 @@ export class SearcherClient {
   async sendBundle(
     bundle: Bundle
   ): Promise<Result<string, SearcherClientError>> {
-    return this.retryWithBackoff(() => {
-      return new Promise<Result<string, SearcherClientError>>(resolve => {
-        this.client.sendBundle(
-          {bundle} as SendBundleRequest,
-          (e: ServiceError | null, resp: SendBundleResponse) => {
-            if (e) {
-              resolve(Err(this.handleError(e)));
-            } else {
-              resolve(Ok(resp.uuid));
-            }
+    return new Promise<Result<string, SearcherClientError>>(resolve => {
+      this.client.sendBundle(
+        {bundle} as SendBundleRequest,
+        (e: ServiceError | null, resp: SendBundleResponse) => {
+          if (e) {
+            resolve(Err(this.handleError(e)));
+          } else {
+            resolve(Ok(resp.uuid));
           }
-        );
-      });
+        }
+      );
     });
   }
 
@@ -259,19 +229,17 @@ export class SearcherClient {
    * @throws A ServiceError if there's an issue with the server while fetching tip accounts.
    */
   async getTipAccounts(): Promise<Result<string[], SearcherClientError>> {
-    return this.retryWithBackoff(() => {
-      return new Promise<Result<string[], SearcherClientError>>(resolve => {
-        this.client.getTipAccounts(
-          {},
-          (e: ServiceError | null, resp: GetTipAccountsResponse) => {
-            if (e) {
-              resolve(Err(this.handleError(e)));
-            } else {
-              resolve(Ok(resp.accounts));
-            }
+    return new Promise<Result<string[], SearcherClientError>>(resolve => {
+      this.client.getTipAccounts(
+        {},
+        (e: ServiceError | null, resp: GetTipAccountsResponse) => {
+          if (e) {
+            resolve(Err(this.handleError(e)));
+          } else {
+            resolve(Ok(resp.accounts));
           }
-        );
-      });
+        }
+      );
     });
   }
 
@@ -284,10 +252,8 @@ export class SearcherClient {
   async getConnectedLeaders(): Promise<
     Result<{[key: string]: SlotList}, SearcherClientError>
   > {
-    return this.retryWithBackoff(() => {
-      return new Promise<
-        Result<{[key: string]: SlotList}, SearcherClientError>
-      >(resolve => {
+    return new Promise<Result<{[key: string]: SlotList}, SearcherClientError>>(
+      resolve => {
         this.client.getConnectedLeaders(
           {},
           async (e: ServiceError | null, resp: ConnectedLeadersResponse) => {
@@ -298,8 +264,8 @@ export class SearcherClient {
             }
           }
         );
-      });
-    });
+      }
+    );
   }
 
   /**
@@ -321,36 +287,35 @@ export class SearcherClient {
       SearcherClientError
     >
   > {
-    return this.retryWithBackoff(() => {
-      return new Promise<
-        Result<
-          {
-            currentSlot: number;
-            nextLeaderSlot: number;
-            nextLeaderIdentity: string;
-          },
-          SearcherClientError
-        >
-      >(resolve => {
-        this.client.getNextScheduledLeader(
-          {
-            regions: [],
-          },
-          async (e: ServiceError | null, resp: NextScheduledLeaderResponse) => {
-            if (e) {
-              resolve(Err(this.handleError(e)));
-            } else {
-              resolve(Ok(resp));
-            }
+    return new Promise<
+      Result<
+        {
+          currentSlot: number;
+          nextLeaderSlot: number;
+          nextLeaderIdentity: string;
+        },
+        SearcherClientError
+      >
+    >(resolve => {
+      this.client.getNextScheduledLeader(
+        {
+          regions: [],
+        },
+        async (e: ServiceError | null, resp: NextScheduledLeaderResponse) => {
+          if (e) {
+            resolve(Err(this.handleError(e)));
+          } else {
+            resolve(Ok(resp));
           }
-        );
-      });
+        }
+      );
     });
   }
 
   /**
    * Checks if a gRPC error represents normal stream closure
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private isNormalStreamClosure(error: any): boolean {
     const message = error.message || '';
     const code = error.code;
@@ -458,12 +423,11 @@ export const searcherClient = (
     );
     return new SearcherClient(client);
   } else {
-    return new SearcherClient(
-      new SearcherServiceClient(
-        url,
-        ChannelCredentials.createSsl(),
-        grpcOptions
-      )
+    const client = new SearcherServiceClient(
+      url,
+      ChannelCredentials.createSsl(),
+      grpcOptions
     );
+    return new SearcherClient(client);
   }
 };

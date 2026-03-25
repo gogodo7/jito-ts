@@ -17,20 +17,10 @@ import {
   GenerateAuthChallengeResponse,
   GenerateAuthTokensRequest,
   GenerateAuthTokensResponse,
-  RefreshAccessTokenRequest,
-  RefreshAccessTokenResponse,
   Role,
   Token,
 } from '../../gen/block-engine/auth';
 import {unixTimestampFromDate} from './utils';
-
-// Result type for token refresh operations
-type RefreshResult =
-  | {success: true}
-  | {success: false; reason: 'rate_limited'; retryAfter?: number}
-  | {success: false; reason: 'auth_failed'; error: string}
-  | {success: false; reason: 'invalid_response'; error: string}
-  | {success: false; reason: 'network_error'; error: string};
 
 // Export simplified error type for SDK users
 export type AuthRefreshError = {
@@ -43,12 +33,17 @@ export type AuthRefreshError = {
 export const authInterceptor = (authProvider: AuthProvider): Interceptor => {
   return (opts: InterceptorOptions, nextCall: NextCall) => {
     return new InterceptingCall(nextCall(opts), {
-      start: async function (metadata: Metadata, listener: Listener, next) {
-        const callback = (accessToken: Jwt) => {
-          metadata.set('authorization', `Bearer ${accessToken.token}`);
-          next(metadata, listener);
-        };
-        authProvider.injectAccessToken(callback);
+      start: function (metadata: Metadata, listener: Listener, next) {
+        authProvider.injectAccessToken(
+          token => {
+            metadata.set('authorization', `Bearer ${token.token}`);
+            next(metadata, listener);
+          },
+          error => {
+            console.error('injectAccessToken error in auth flow:', error);
+            next(metadata, listener);
+          }
+        );
       },
     });
   };
@@ -76,250 +71,126 @@ export class AuthProvider {
   private readonly authKeypair: Keypair;
   private accessToken: Jwt | undefined;
   private refreshToken: Jwt | undefined;
-  private refreshing: Promise<RefreshResult | null> | null = null;
 
   constructor(client: AuthServiceClient, authKeypair: Keypair) {
     this.client = client;
     this.authKeypair = authKeypair;
-    this.fullAuth((accessToken: Jwt, refreshToken: Jwt) => {
-      this.accessToken = accessToken;
-      this.refreshToken = refreshToken;
-    });
   }
 
-  // If access token expired then refreshes, if the refresh token is expired then runs the full auth flow.
+  async init() {
+    // Get initial tokens
+    const [accessToken, refreshToken] = await this.auth();
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+
+    // Refresh tokens every 10 minutes
+    setInterval(() => {
+      this.auth()
+        .then(([accessToken, refreshToken]) => {
+          this.accessToken = accessToken;
+          this.refreshToken = refreshToken;
+        })
+        .catch(err => {
+          console.error('Error refreshing tokens:', err);
+        });
+    }, 10 * 60 * 1000);
+  }
+
   public injectAccessToken(
     callback: (accessToken: Jwt) => void,
-    errorCallback?: (error: AuthRefreshError) => void
+    errorCallback: (error: Error) => void
   ) {
-    if (
-      !this.accessToken ||
-      !this.refreshToken ||
-      this.refreshToken.isExpired()
-    ) {
-      this.fullAuth((accessToken: Jwt, refreshToken: Jwt) => {
-        this.accessToken = accessToken;
-        this.refreshToken = refreshToken;
-        callback(accessToken);
-      });
-
+    if (!this.accessToken) {
+      errorCallback(new Error('No access token'));
       return;
     }
 
-    if (!this.accessToken?.isExpired()) {
-      callback(this.accessToken);
+    if (this.accessToken?.isExpired()) {
+      errorCallback(new Error('Access token expired'));
       return;
     }
 
-    if (!this.refreshing) {
-      this.refreshing = this.refreshAccessToken().finally(() => {
-        this.refreshing = null;
-      });
-    }
-
-    this.refreshing
-      .then(result => {
-        if (result?.success) {
-          // Successful refresh - we have a valid access token
-          callback(this.accessToken!);
-        } else if (result && errorCallback) {
-          // Refresh failed - let user decide what to do
-          const authError: AuthRefreshError = {
-            reason: result.reason,
-            message: this.getErrorMessage(result),
-            ...(result.reason === 'rate_limited' &&
-              result.retryAfter !== undefined && {
-                retryAfter: result.retryAfter,
-              }),
-          };
-          errorCallback(authError);
-        } else if (result) {
-          console.error(
-            `Token refresh failed: ${result.reason} - ${this.getErrorMessage(
-              result
-            )}`
-          );
-        }
-      })
-      .catch(error => {
-        // This should never happen since refreshAccessToken never rejects now
-        console.error('Unexpected error in token refresh flow:', error);
-        if (errorCallback) {
-          errorCallback({
-            reason: 'network_error',
-            message: 'Unexpected error in token refresh flow',
-          });
-        }
-      });
-  }
-
-  // Helper method to safely get error message from RefreshResult
-  private getErrorMessage(
-    result: Exclude<RefreshResult, {success: true}>
-  ): string {
-    switch (result.reason) {
-      case 'rate_limited':
-        return 'Request rate limited';
-      case 'auth_failed':
-      case 'invalid_response':
-      case 'network_error':
-        return result.error;
-      default:
-        return 'Token refresh failed';
-    }
-  }
-
-  // Refresh access token with proper error reporting
-  private async refreshAccessToken(): Promise<RefreshResult> {
-    return new Promise<RefreshResult>(resolve => {
-      this.client.refreshAccessToken(
-        {
-          refreshToken: this.refreshToken?.token,
-        } as RefreshAccessTokenRequest,
-        async (e: ServiceError | null, resp: RefreshAccessTokenResponse) => {
-          if (e) {
-            // Handle different types of errors with specific reasons
-            if (e.code === 8) {
-              // RESOURCE_EXHAUSTED (gRPC equivalent of 429)
-              resolve({
-                success: false,
-                reason: 'rate_limited',
-              });
-              return;
-            }
-
-            if (e.code === 16) {
-              // UNAUTHENTICATED
-              resolve({
-                success: false,
-                reason: 'auth_failed',
-                error: e.message,
-              });
-              return;
-            }
-
-            if (e.code === 14) {
-              // UNAVAILABLE
-              resolve({
-                success: false,
-                reason: 'network_error',
-                error: e.message,
-              });
-              return;
-            }
-
-            // Default to auth failure for other error codes
-            resolve({
-              success: false,
-              reason: 'auth_failed',
-              error: e.message,
-            });
-            return;
-          }
-
-          if (!AuthProvider.isValidToken(resp.accessToken)) {
-            resolve({
-              success: false,
-              reason: 'invalid_response',
-              error: 'Received invalid access token from server',
-            });
-            return;
-          }
-
-          this.accessToken = new Jwt(
-            resp.accessToken?.value || '',
-            unixTimestampFromDate(resp.accessToken?.expiresAtUtc || new Date())
-          );
-
-          resolve({success: true});
-        }
-      );
-    });
-  }
-
-  // Creates an AuthProvider object, and asynchronously performs full authentication flow.
-  public static create(
-    client: AuthServiceClient,
-    authKeypair: Keypair
-  ): AuthProvider {
-    const provider = new AuthProvider(client, authKeypair);
-    provider.fullAuth((accessToken: Jwt, refreshToken: Jwt) => {
-      provider.accessToken = accessToken;
-      provider.refreshToken = refreshToken;
-    });
-
-    return provider;
+    callback(this.accessToken);
+    return;
   }
 
   // Run entire auth flow:
   // - fetch a server generated challenge
   // - sign the challenge and submit in exchange for an access and refresh token
   // - inject the tokens into the provided callback
-  private fullAuth(
-    callback: (accessToken: Jwt, refreshToken: Jwt) => void
-  ): void {
-    this.client.generateAuthChallenge(
-      {
-        role: Role.SEARCHER,
-        pubkey: this.authKeypair.publicKey.toBytes(),
-      } as GenerateAuthChallengeRequest,
-      async (e: ServiceError | null, resp: GenerateAuthChallengeResponse) => {
-        if (e) {
-          throw e;
-        }
-
-        // Append pubkey to ensure what we're signing is garbage.
-        const challenge = `${this.authKeypair.publicKey.toString()}-${
-          resp.challenge
-        }`;
-        const signedChallenge = await ed.sign(
-          Buffer.from(challenge),
-          // First 32 bytes is the private key, last 32 public key.
-          this.authKeypair.secretKey.slice(0, 32)
-        );
-
-        this.client.generateAuthTokens(
-          {
-            challenge,
-            clientPubkey: this.authKeypair.publicKey.toBytes(),
-            signedChallenge,
-          } as GenerateAuthTokensRequest,
-          (e: ServiceError | null, resp: GenerateAuthTokensResponse) => {
-            if (e) {
-              throw e;
-            }
-
-            if (!AuthProvider.isValidToken(resp.accessToken)) {
-              throw `received invalid access token ${resp.accessToken}`;
-            }
-            const accessToken = new Jwt(
-              resp.accessToken?.value || '',
-              unixTimestampFromDate(
-                resp.accessToken?.expiresAtUtc || new Date()
-              )
-            );
-
-            if (!AuthProvider.isValidToken(resp.refreshToken)) {
-              throw `received invalid refresh token ${resp.refreshToken}`;
-            }
-            const refreshToken = new Jwt(
-              resp.refreshToken?.value || '',
-              unixTimestampFromDate(
-                resp.refreshToken?.expiresAtUtc || new Date()
-              )
-            );
-
-            callback(accessToken, refreshToken);
+  private auth(): Promise<[Jwt, Jwt]> {
+    return new Promise<[Jwt, Jwt]>((resolve, reject) => {
+      this.client.generateAuthChallenge(
+        {
+          role: Role.SEARCHER,
+          pubkey: this.authKeypair.publicKey.toBytes(),
+        } as GenerateAuthChallengeRequest,
+        async (e: ServiceError | null, resp: GenerateAuthChallengeResponse) => {
+          if (e) {
+            reject(e);
+            return;
           }
-        );
-      }
-    );
+
+          // Append pubkey to ensure what we're signing is garbage.
+          const challenge = `${this.authKeypair.publicKey.toString()}-${
+            resp.challenge
+          }`;
+          const signedChallenge = await ed.sign(
+            Buffer.from(challenge),
+            // First 32 bytes is the private key, last 32 public key.
+            this.authKeypair.secretKey.slice(0, 32)
+          );
+
+          this.client.generateAuthTokens(
+            {
+              challenge,
+              clientPubkey: this.authKeypair.publicKey.toBytes(),
+              signedChallenge,
+            } as GenerateAuthTokensRequest,
+            (e: ServiceError | null, resp: GenerateAuthTokensResponse) => {
+              if (e) {
+                reject(e);
+                return;
+              }
+
+              if (!AuthProvider.isValidToken(resp.accessToken)) {
+                reject(new Error('Received invalid access token from server'));
+                return;
+              }
+
+              const accessToken = new Jwt(
+                resp.accessToken?.value || '',
+                unixTimestampFromDate(
+                  resp.accessToken?.expiresAtUtc || new Date()
+                )
+              );
+
+              if (!AuthProvider.isValidToken(resp.refreshToken)) {
+                reject(new Error('Received invalid refresh token from server'));
+                return;
+              }
+
+              const refreshToken = new Jwt(
+                resp.refreshToken?.value || '',
+                unixTimestampFromDate(
+                  resp.refreshToken?.expiresAtUtc || new Date()
+                )
+              );
+
+              resolve([accessToken, refreshToken]);
+              return;
+            }
+          );
+        }
+      );
+    });
   }
 
   private static isValidToken(token: Token | undefined) {
     if (!token) {
       return false;
     }
+
     if (!token.expiresAtUtc) {
       return false;
     }
